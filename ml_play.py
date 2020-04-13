@@ -98,12 +98,12 @@ def ml_loop():
 
             if y == 0:
                 comm.send_instruction(scene_info.frame, PlatformAction.NONE)
-                # print('NONE')
+                print('NONE')
             elif y == -1:
                 comm.send_instruction(
                     scene_info.frame, PlatformAction.MOVE_LEFT)
-                # print('LEFT')
+                print('LEFT')
             elif y == 1:
                 comm.send_instruction(
                     scene_info.frame, PlatformAction.MOVE_RIGHT)
-                # print('RIGHT')
+                print('RIGHT')
