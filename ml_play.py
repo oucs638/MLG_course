@@ -2,13 +2,12 @@
 The template of the main script of the machine learning process
 """
 import pickle
-from os import path
-
 import numpy as np
 import games.arkanoid.communication as comm
 from games.arkanoid.communication import (
     SceneInfo, GameStatus, PlatformAction
 )
+import os.path as path
 
 
 def ml_loop():
@@ -79,7 +78,6 @@ def ml_loop():
                 scene_info.status == GameStatus.GAME_PASS:
             # Do some stuff if needed
             ball_served = False
-            bal_lst = [93, 395]
 
             # 3.2.1. Inform the game process that ml process is ready
             comm.ml_ready()
