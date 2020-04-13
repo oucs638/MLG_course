@@ -6,10 +6,9 @@ from os import path
 
 import numpy as np
 import games.arkanoid.communication as comm
-from games.arkanoid.communication import ( \
+from games.arkanoid.communication import (
     SceneInfo, GameStatus, PlatformAction
 )
-
 
 
 def ml_loop():
@@ -27,47 +26,60 @@ def ml_loop():
     # === Here is the execution order of the loop === #
     # 1. Put the initialization code here.
     ball_served = False
-    filename = path.join(path.dirname(__file__), 'save', 'clf_KMeans_BallAndDirection.pickle')
+    filename = path.join(path.dirname(__file__), 'save',
+                         'clf_KNN_BallAndDirection.pickle')
     with open(filename, 'rb') as file:
         clf = pickle.load(file)
-    s = [93, 93]
+    bal_lst = [93, 395]
 
-    def get_direction(ball_x, ball_y, ball_pre_x, ball_pre_y):
-        VectorX = ball_x - ball_pre_x
-        VectorY = ball_y - ball_pre_y
-        if (VectorX >= 0 and VectorY >= 0):
-            return 0
-        elif (VectorX > 0 and VectorY < 0):
-            return 1
-        elif (VectorX < 0 and VectorY > 0):
-            return 2
-        elif (VectorX < 0 and VectorY < 0):
-            return 3
+    def get_vector(bal_now, bal_pre, plt_pos):
+        bal_xsp = bal_now[0] - bal_pre[0]
+        bal_ysp = bal_now[1] - bal_pre[1]
+        bal_siz, hit_max = 5, 195
+        res_pos = bal_now[0]
+        if bal_ysp > 0:
+            tp_time = (plt_pos[1] - bal_siz - bal_now[1]) // bal_ysp
+            res_pos = abs(bal_now[0] + bal_xsp * tp_time)
+            if res_pos > hit_max:
+                if (res_pos // hit_max) % 2 == 0:
+                    res_pos -= (res_pos // hit_max) * hit_max
+                else:
+                    res_pos -= (res_pos // hit_max) * hit_max
+                    res_pos = hit_max - res_pos
+        else:
+            res_pos = bal_now[0]
+        return res_pos
+
+    def data_preprocess(bal, plt, bal_pre):
+        cmd = 0
+        plt_xsz, bal_siz = 40, 5
+        res_pos = get_vector(bal, bal_pre, plt)
+        if res_pos < (plt[0] + bal_siz):
+            cmd = -1
+        elif res_pos > (plt[0] + plt_xsz - bal_siz * 2):
+            cmd = 1
+        else:
+            cmd = 0
+        return bal, [cmd, cmd]
 
     # 2. Inform the game process that ml process is ready before start the loop.
     comm.ml_ready()
-    
-
 
     # 3. Start an endless loop.
     while True:
         # 3.1. Receive the scene information sent from the game process.
         scene_info = comm.get_scene_info()
-        feature = []
-        feature.append(scene_info.ball[0])
-        feature.append(scene_info.ball[1])
-        feature.append(scene_info.platform[0])
-        
-        feature.append(get_direction(feature[0],feature[1],s[0],s[1]))
-        s = [feature[0], feature[1]]
-        feature = np.array(feature)
-        feature = feature.reshape((-1,4))
+        bal_lst, frm_info = data_preprocess(
+            scene_info.ball, scene_info.platform, bal_lst)
+        bal_lst = scene_info.ball
+        frm_info = np.array(frm_info).reshape(1, -1)
         # 3.2. If the game is over or passed, the game process will reset
         #      the scene and wait for ml process doing resetting job.
         if scene_info.status == GameStatus.GAME_OVER or \
-            scene_info.status == GameStatus.GAME_PASS:
+                scene_info.status == GameStatus.GAME_PASS:
             # Do some stuff if needed
             ball_served = False
+            bal_lst = [93, 395]
 
             # 3.2.1. Inform the game process that ml process is ready
             comm.ml_ready()
@@ -77,18 +89,21 @@ def ml_loop():
 
         # 3.4. Send the instruction for this frame to the game process
         if not ball_served:
-            comm.send_instruction(scene_info.frame, PlatformAction.SERVE_TO_LEFT)
+            comm.send_instruction(
+                scene_info.frame, PlatformAction.SERVE_TO_LEFT)
             ball_served = True
         else:
-                
-            y = clf.predict(feature)
-            
+
+            y = clf.predict(frm_info)
+
             if y == 0:
                 comm.send_instruction(scene_info.frame, PlatformAction.NONE)
                 print('NONE')
-            elif y == 1:
-                comm.send_instruction(scene_info.frame, PlatformAction.MOVE_LEFT)
+            elif y == -1:
+                comm.send_instruction(
+                    scene_info.frame, PlatformAction.MOVE_LEFT)
                 print('LEFT')
-            elif y == 2:
-                comm.send_instruction(scene_info.frame, PlatformAction.MOVE_RIGHT)
+            elif y == 1:
+                comm.send_instruction(
+                    scene_info.frame, PlatformAction.MOVE_RIGHT)
                 print('RIGHT')
