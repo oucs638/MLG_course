@@ -2,12 +2,20 @@
 The template of the main script of the machine learning process
 """
 import pickle
+from os import path
+
 import numpy as np
 import games.arkanoid.communication as comm
 from games.arkanoid.communication import (
     SceneInfo, GameStatus, PlatformAction
 )
-import os.path as path
+
+x_axis_max, y_axis_max = 200, 500
+bal_siz, bal_spd = 5, 7
+plt_xsz, ply_ysz, plt_spd, plt_xin, plt_yin = 40, 5, 5, 75, 400
+hit_sam_spd, hit_opp_spd = 10, 7
+hit_rng_max = x_axis_max - bal_siz
+brk_xsz, brk_ysz = 25, 10
 
 
 def ml_loop():
@@ -25,41 +33,25 @@ def ml_loop():
     # === Here is the execution order of the loop === #
     # 1. Put the initialization code here.
     ball_served = False
+    bal_xrc, bal_yrc, bal_xsp, bal_ysp = -1, -1, bal_spd, -bal_spd
+    res_pos = plt_xin + 20
     filename = path.join(path.dirname(__file__), 'save',
-                         'clf_KNN_BallAndDirection.pickle')
+                         'clf_KMeans_BallAndDirection.pickle')
     with open(filename, 'rb') as file:
         clf = pickle.load(file)
-    bal_lst = [93, 395]
+    s = [93, 93]
 
-    def get_vector(bal_now, bal_pre, plt_pos):
-        bal_xsp = bal_now[0] - bal_pre[0]
-        bal_ysp = bal_now[1] - bal_pre[1]
-        bal_siz, hit_max = 5, 195
-        res_pos = bal_now[0]
-        if bal_ysp > 0:
-            tp_time = (plt_pos[1] - bal_siz - bal_now[1]) // bal_ysp
-            res_pos = abs(bal_now[0] + bal_xsp * tp_time)
-            if res_pos > hit_max:
-                if (res_pos // hit_max) % 2 == 0:
-                    res_pos -= (res_pos // hit_max) * hit_max
-                else:
-                    res_pos -= (res_pos // hit_max) * hit_max
-                    res_pos = hit_max - res_pos
-        else:
-            res_pos = bal_now[0]
-        return res_pos
-
-    def data_preprocess(bal, plt, bal_pre):
-        cmd = 0
-        plt_xsz, bal_siz = 40, 5
-        res_pos = get_vector(bal, bal_pre, plt)
-        if res_pos < (plt[0] + bal_siz):
-            cmd = -1
-        elif res_pos > (plt[0] + plt_xsz - bal_siz * 2):
-            cmd = 1
-        else:
-            cmd = 0
-        return bal, [cmd, cmd]
+    def get_direction(ball_x, ball_y, ball_pre_x, ball_pre_y):
+        VectorX = ball_x - ball_pre_x
+        VectorY = ball_y - ball_pre_y
+        if (VectorX >= 0 and VectorY >= 0):
+            return 0
+        elif (VectorX > 0 and VectorY < 0):
+            return 1
+        elif (VectorX < 0 and VectorY > 0):
+            return 2
+        elif (VectorX < 0 and VectorY < 0):
+            return 3
 
     # 2. Inform the game process that ml process is ready before start the loop.
     comm.ml_ready()
@@ -68,10 +60,6 @@ def ml_loop():
     while True:
         # 3.1. Receive the scene information sent from the game process.
         scene_info = comm.get_scene_info()
-        bal_lst, frm_info = data_preprocess(
-            scene_info.ball, scene_info.platform, bal_lst)
-        bal_lst = scene_info.ball
-        frm_info = np.array(frm_info).reshape(1, -1)
         # 3.2. If the game is over or passed, the game process will reset
         #      the scene and wait for ml process doing resetting job.
         if scene_info.status == GameStatus.GAME_OVER or \
@@ -84,6 +72,25 @@ def ml_loop():
             continue
 
         # 3.3. Put the code here to handle the scene information
+        if (bal_xrc < 0 and bal_yrc < 0) or (not ball_served):
+            bal_xrc, bal_yrc = scene_info.ball
+            bal_xsp, bal_ysp = -7, -7
+        else:
+            bal_xsp = scene_info.ball[0] - bal_xrc
+            bal_ysp = scene_info.ball[1] - bal_yrc
+            bal_xrc, bal_yrc = scene_info.ball
+        # calculate the ball landing pos
+        if ball_served and bal_ysp > 0:
+            tp_time = (plt_yin - bal_siz - scene_info.ball[1]) // bal_ysp
+            res_pos = abs(scene_info.ball[0] + bal_xsp * tp_time)
+            if res_pos > hit_rng_max:
+                if (res_pos // hit_rng_max) % 2 == 0:
+                    res_pos -= (res_pos // hit_rng_max) * hit_rng_max
+                else:
+                    res_pos -= (res_pos // hit_rng_max) * hit_rng_max
+                    res_pos = hit_rng_max - res_pos
+        else:
+            res_pos = scene_info.platform[0] + plt_xsz//2
 
         # 3.4. Send the instruction for this frame to the game process
         if not ball_served:
@@ -91,17 +98,11 @@ def ml_loop():
                 scene_info.frame, PlatformAction.SERVE_TO_LEFT)
             ball_served = True
         else:
-
-            y = clf.predict(frm_info)
-
-            if y == 0:
-                comm.send_instruction(scene_info.frame, PlatformAction.NONE)
-                print('NONE')
-            elif y == -1:
+            if res_pos < scene_info.platform[0] + bal_siz:
                 comm.send_instruction(
                     scene_info.frame, PlatformAction.MOVE_LEFT)
-                print('LEFT')
-            elif y == 1:
+            elif res_pos > (scene_info.platform[0] + plt_xsz - bal_siz*2):
                 comm.send_instruction(
                     scene_info.frame, PlatformAction.MOVE_RIGHT)
-                print('RIGHT')
+            else:
+                comm.send_instruction(scene_info.frame, PlatformAction.NONE)
