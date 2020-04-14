@@ -47,7 +47,7 @@ def ml_loop():
                     res_pos -= (res_pos // hit_max) * hit_max
                     res_pos = hit_max - res_pos
         else:
-            res_pos = plt_pos[0] + 20
+            res_pos = 100
         return res_pos
 
     def data_preprocess(bal, plt, bal_pre):
