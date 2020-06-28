@@ -25,7 +25,7 @@ class MLPlay:
         |  4 |  c |  6 |
         |    |    |    |
         |  7 |  8 |  9 |
-        |    |    |    |       
+        |    |    |    | 
         """
         def check_grid():
             grid = set()
